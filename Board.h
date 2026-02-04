@@ -11,23 +11,25 @@ using namespace std;
 
 class Board {
 private:
-    //p1 is Button, p2 is BB
-    vector<Card> p1Cards;
-    vector<Card> p2Cards;
-    vector<Card> p1Board;
-    vector<Card> p2Board;
-    Infoset p1Infoset; 
-    Infoset p2Infoset;
+    vector<Card> heroCards;
+    vector<Card> villainCards;
+    vector<Card> hCommCards; // comm cards based on hero abstraction
+    vector<Card> vCommCards; // comm cards based on villian abstraction
+    Players hero;
+    Infoset hInfoset; //based on hero POV
     int potSize;
-    int p1Stack;
-    int p2Stack;
-    int p1Committed;
-    int p2Committed;
+    int heroStack;
+    int villainStack;
+    int heroCommittedTotal;
+    int villainCommittedTotal;
+    int heroCommittedStreet;
+    int villainCommittedStreet;
     int prevBet;
     int street; //0-preflop, 1-flop, 2-turn, 3-river
     Players currentPlayer; 
     Moves lastMove;
     bool terminal;
+    int numBets;
 
     void addFlopCardsToInfoset();
     void addTurnCardToInfoset();
@@ -35,20 +37,18 @@ private:
 
 public:
     Board(const vector<Card> &player1Cards, const vector<Card> &player2Cards, 
-            const vector<Card> &player1Board, const vector<Card> &player2Board) :
-        p1Cards(player1Cards), p2Cards(player2Cards),
-        p1Board(player1Board), p2Board(player2Board),
-        p1Infoset(Infoset()), p2Infoset(Infoset()),
-        potSize(1), p1Stack(100), p2Stack(99),
-        p1Committed(0), p2Committed(1),
+            const vector<Card> &player1Board, const vector<Card> &player2Board, const Players traverser) :
+        heroCards(player1Cards), villainCards(player2Cards),
+        hCommCards(player1Board), vCommCards(player2Board), hero(traverser),
+        hInfoset(Infoset()), potSize(1), 
+        heroStack((traverser == BUTTON) ? 100 : 99), villainStack((traverser == BUTTON) ? 99 : 100),
+        heroCommittedTotal((traverser == BUTTON) ? 0 : 1), villainCommittedTotal((traverser == BUTTON) ? 1 : 0),
+        heroCommittedStreet((traverser == BUTTON) ? 0 : 1), villainCommittedStreet((traverser == BUTTON) ? 1 : 0),
         prevBet(1), street(0),
-        currentPlayer(Button),
+        currentPlayer(BUTTON), numBets(1),
         lastMove(RAISE1), terminal(false) {
-            for (const Card &card : p1Cards) {
-                p1Infoset.addCard(card);
-            }
-            for (const Card &card : p2Cards) {
-                p2Infoset.addCard(card);
+            for (const Card &card : heroCards) {
+                hInfoset.addCard(card);
             }
         }
 
@@ -56,11 +56,7 @@ public:
     void move(Moves move);
 
     Infoset getInfoset() const {
-        if (currentPlayer == Button) {
-            return p1Infoset;
-        } else {
-            return p2Infoset;
-        }
+        return hInfoset;
     }
 
     bool isTerminal() const {

@@ -5,28 +5,36 @@ void Board::move(Moves move) {
     if (move == FOLD) {
         lastMove = FOLD;
         terminal = true;
-        currentPlayer = (currentPlayer == Button) ? BB : Button;
+        currentPlayer = (currentPlayer == BUTTON) ? BB : BUTTON;
     } else if (move == CALL) {
-        if (lastMove != CALL && lastMove != NULL_MOVE) { //Calling a bet. 
-            int toCall = prevBet;
-            if (currentPlayer == Button) {
-                p1Stack -= toCall;
-                p1Committed += toCall;
+        if (lastMove != CALL && lastMove != NULL_MOVE) { //Calling a bet, moves money only
+            int toCall = prevBet - (currentPlayer == hero ? heroCommittedStreet : villainCommittedStreet);
+            if (currentPlayer == hero) {
+                heroStack -= toCall;
+                heroCommittedStreet += toCall;
+                heroCommittedTotal += toCall;
             } else {
-                p2Stack -= toCall;
-                p2Committed += toCall;
+                villainStack -= toCall;
+                villainCommittedStreet += toCall;
+                villainCommittedTotal += toCall;
             }
             potSize += toCall;
         }
-        if (lastMove == NULL_MOVE) {
-            lastMove = CALL; //first check
-            currentPlayer = (currentPlayer == Button) ? BB : Button;
+        if (lastMove == NULL_MOVE) { //first check
+            lastMove = CALL;
+            currentPlayer = (currentPlayer == BUTTON) ? BB : BUTTON;
         }
-        else { //second check or calling a bet. 
-            //Move to next street
+        else { //second check or calling a bet
             street++;
             prevBet = 0;
+            numBets = 0;
+            heroCommittedStreet = 0;
+            villainCommittedStreet = 0;
+            /*
             if (street > 3 || lastMove == ALL_IN) { //hand over
+                terminal = true;
+            }*/
+            if (street > 1 || lastMove == ALL_IN) { //hand over, flop only version
                 terminal = true;
             } else {
                 lastMove = NULL_MOVE;
@@ -42,45 +50,51 @@ void Board::move(Moves move) {
             currentPlayer = BB; //BB is first to act on all streets after preflop
         }
     } else { //raise 
-        int raiseAmount = 0;
-        int toCall = prevBet;
-        int effStack = min(p1Stack, p2Stack);
+        numBets++;
+        int newBet = 0;
+        int currCommited = (currentPlayer == hero ? heroCommittedStreet : villainCommittedStreet);
+        int toCall = prevBet - currCommited;
+        int effStack;
+        effStack = min(heroStack + heroCommittedStreet, villainStack + villainCommittedStreet);
         if (move == RAISE1) {
-            raiseAmount = (prevBet = 0) ? int(0.4 * potSize) : int(2.5 * prevBet) - toCall;
+            //2.5x, where 2x is the min allowed raise. 
+            newBet = (prevBet == 0) ? int(0.4 * potSize) : (int(2.5 * toCall) + currCommited);
         } else if (move == RAISE2) {
-            raiseAmount = (prevBet = 0) ? int(0.8 * potSize) : int(3.5 * prevBet) - toCall;
+            //3.5x
+            newBet = (prevBet == 0) ? int(0.8 * potSize) : (int(3.5 * toCall) + currCommited);
         } else if (move == ALL_IN) {
-            raiseAmount = effStack;
+            newBet = effStack; 
         }
-        if (currentPlayer == Button) {
-            p1Stack -= (toCall + raiseAmount);
-            p1Committed += (toCall + raiseAmount);
+        if (currentPlayer == hero) {
+            heroStack -= (newBet - currCommited);
+            heroCommittedStreet += (newBet - currCommited);
+            heroCommittedTotal += (newBet - currCommited);
         } else {
-            p2Stack -= (toCall + raiseAmount);
-            p2Committed += (toCall + raiseAmount);
+            villainStack -= (newBet - currCommited);
+            villainCommittedStreet += (newBet - currCommited);
+            villainCommittedTotal += (newBet - currCommited);
         }
-        potSize += (toCall + raiseAmount);
-        prevBet = raiseAmount;
+        potSize += (newBet - currCommited);
+        prevBet = newBet;
         lastMove = move;
-        currentPlayer = (currentPlayer == Button) ? BB : Button;
+        currentPlayer = (currentPlayer == BUTTON) ? BB : BUTTON;
     }
     //Update infosets
-    p1Infoset.addMove(move);
-    p2Infoset.addMove(move);
+    if (!terminal) hInfoset.addMove(move);
 }
 
 int Board::utilities() const {
     if (lastMove == FOLD) {
-        return (currentPlayer == Button) ? p2Committed : -p1Committed;
+        return (currentPlayer == hero) ? villainCommittedTotal : -heroCommittedTotal;
     } else {
         //Showdown
-        int p1Best = evaluateHand(p1Cards, p1Board);
-        int p2Best = evaluateHand(p2Cards, p2Board);
+        int heroBest = evaluateHand(heroCards, hCommCards);
+        int villainBest = evaluateHand(villainCards, vCommCards);
         //lower score is better hand. 
-        if (p1Best < p2Best) {
-            return p2Committed;
-        } else if (p2Best < p1Best) {
-            return -p1Committed;
+        if (heroBest < villainBest) {
+            return villainCommittedTotal;
+        } else if (heroBest > villainBest) {
+            return -heroCommittedTotal;
         } else {
             return 0; //split pot
         }
@@ -89,32 +103,33 @@ int Board::utilities() const {
 
 vector<Moves> Board::getLegalActions() const {
     vector<Moves> actions;
-    int effStack = min(p1Stack, p2Stack);
-    //First to bet
+
+    int currCommited = (currentPlayer == hero ? heroCommittedStreet: villainCommittedStreet);
+    int effStack = min(heroStack + heroCommittedStreet, villainStack + villainCommittedStreet);
+    int toCall = prevBet - currCommited;
+
     if (prevBet == 0) {
-        double ratio = double(effStack) / potSize;
-        actions.push_back(CALL); //check
-        if (ratio > 0.4) { //if less than this, all in is only option
+        actions.push_back(CALL); // check
+
+        if (effStack * 5 > potSize * 2)
             actions.push_back(RAISE1);
-        }
-        if (ratio > 0.8) { // if less than this, all in or smaller raise is only option
+
+        if (effStack * 5 > potSize * 4)
             actions.push_back(RAISE2);
-        }
+
         actions.push_back(ALL_IN);
-    } else { //facing a bet
+    } else {
         actions.push_back(FOLD);
         actions.push_back(CALL);
-        // effStack changed to reflect prev bet. 
-        if (effStack > prevBet * 2.5) { //if less than this, all in is only option
+
+        if (effStack > (2.5 * toCall + currCommited) && numBets < 3)
             actions.push_back(RAISE1);
-        }
-        if (effStack > prevBet * 3.5) { //if less than this, all in or smaller raise is only option
+
+        if (effStack > (3.5 * toCall + currCommited) && numBets < 3)
             actions.push_back(RAISE2);
-        }
-        //cannot jam if prev bet is already all in, considered call
-        if (effStack > 0) {
+
+        if (effStack > prevBet)
             actions.push_back(ALL_IN);
-        }
     }
     return actions;
 }
@@ -126,21 +141,18 @@ int Board::getNumActions() const {
 void Board::addFlopCardsToInfoset() {
     if (street == 1) {
         for (int i = 0; i < 3; i++) {
-            p1Infoset.addCard(p1Board[i]);
-            p2Infoset.addCard(p2Board[i]);
+            hInfoset.addCard(hCommCards[i]);
         }
     }
 }
 void Board::addTurnCardToInfoset() {
     if (street == 2) {
-        p1Infoset.addCard(p1Board[3]);
-        p2Infoset.addCard(p2Board[3]);
+        hInfoset.addCard(hCommCards[3]);
     }
 }
 void Board::addRiverCardToInfoset() {
     if (street == 3) {
-        p1Infoset.addCard(p1Board[4]);
-        p2Infoset.addCard(p2Board[4]);
+        hInfoset.addCard(hCommCards[4]);
     }
 }
 

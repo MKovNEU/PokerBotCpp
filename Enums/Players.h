@@ -1,6 +1,6 @@
 #pragma once 
 
 enum Players {
-    Button, 
+    BUTTON, 
     BB
 };

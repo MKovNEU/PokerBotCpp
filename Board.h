@@ -6,64 +6,69 @@
 #include "infoset.h"
 #include "Enums/Moves.h"
 #include "Enums/Players.h"
+#include "HandEvaluator.h"
 
 using namespace std;
 
 class Board {
 private:
-    vector<Card> heroCards;
-    vector<Card> villainCards;
-    vector<Card> hCommCards; // comm cards based on hero abstraction
-    vector<Card> vCommCards; // comm cards based on villian abstraction
+    vector<vector<Card>> cards;
+    vector<Card> commCards;
     Players hero;
-    Infoset hInfoset; //based on hero POV
-    int potSize;
-    int heroStack;
-    int villainStack;
-    int heroCommittedTotal;
-    int villainCommittedTotal;
-    int heroCommittedStreet;
-    int villainCommittedStreet;
-    int prevBet;
-    int street; //0-preflop, 1-flop, 2-turn, 3-river
+    vector<Infoset> infosets; //based on hero POV
+    double potSize;
+    vector<double> stacks;
+    vector<bool> allIn;
+    vector<double> handScores;
     Players currentPlayer; 
-    Moves lastMove;
     bool terminal;
-    int numBets;
-
-    void addFlopCardsToInfoset();
-    void addTurnCardToInfoset();
-    void addRiverCardToInfoset();
+    double acesWin;
 
 public:
-    Board(const vector<Card> &player1Cards, const vector<Card> &player2Cards, 
-            const vector<Card> &player1Board, const vector<Card> &player2Board, const Players traverser) :
-        heroCards(player1Cards), villainCards(player2Cards),
-        hCommCards(player1Board), vCommCards(player2Board), hero(traverser),
-        hInfoset(Infoset()), potSize(1), 
-        heroStack((traverser == BUTTON) ? 100 : 99), villainStack((traverser == BUTTON) ? 99 : 100),
-        heroCommittedTotal((traverser == BUTTON) ? 0 : 1), villainCommittedTotal((traverser == BUTTON) ? 1 : 0),
-        heroCommittedStreet((traverser == BUTTON) ? 0 : 1), villainCommittedStreet((traverser == BUTTON) ? 1 : 0),
-        prevBet(1), street(0),
-        currentPlayer(BUTTON), numBets(1),
-        lastMove(RAISE1), terminal(false) {
-            for (const Card &card : heroCards) {
-                hInfoset.addCard(card);
+    Board(const vector<vector<Card>> &playerCards, const vector<Card> &communityCards,
+         const vector<double> &playerStacks, const Players traverser) :
+        cards(playerCards), commCards(communityCards), hero(traverser), potSize(1.5), stacks(playerStacks), 
+        handScores(4, 0), allIn(4, false), currentPlayer(UTG), terminal(false), acesWin(0)
+        {
+            for (int p = 0; p < 4; p++) {
+                Infoset hInfoset;
+                if (cards[p][0].suit == cards[p][1].suit) {
+                    if (cards[p][0].rank > cards[p][1].rank) {
+                        hInfoset.addCard(Card(cards[p][0].rank, CLUBS));
+                        hInfoset.addCard(Card(cards[p][1].rank, CLUBS));
+                    } else {
+                        hInfoset.addCard(Card(cards[p][1].rank, CLUBS));
+                        hInfoset.addCard(Card(cards[p][0].rank, CLUBS));
+                    }
+                } else {
+                    if (cards[p][0].rank >= cards[p][1].rank) {
+                        hInfoset.addCard(Card(cards[p][0].rank, CLUBS));
+                        hInfoset.addCard(Card(cards[p][1].rank, DIAMONDS));
+                    } else {
+                        hInfoset.addCard(Card(cards[p][1].rank, CLUBS));
+                        hInfoset.addCard(Card(cards[p][0].rank, DIAMONDS));
+                    }
+                }
+                infosets.push_back(hInfoset);
             }
+            handScores[0] = evaluateHand(cards[0], commCards);
+            handScores[1] = evaluateHand(cards[1], commCards);
+            handScores[2] = evaluateHand(cards[2], commCards);
+            handScores[3] = evaluateHand(cards[3], commCards);
         }
 
         
     void move(Moves move);
 
-    Infoset getInfoset() const {
-        return hInfoset;
+    Infoset getInfoset(Players cp) const {
+        return infosets[cp];
     }
 
     bool isTerminal() const {
         return terminal;
     }
 
-    int utilities() const;
+    double utilities();
 
     Players getCurrentPlayer() const {
         return currentPlayer;
